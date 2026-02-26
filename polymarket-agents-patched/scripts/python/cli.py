@@ -124,5 +124,31 @@ def run_autonomous_trader() -> None:
     trader.one_best_trade()
 
 
+@app.command()
+def balance() -> None:
+    """
+    Show USDC balance + open position summary from local trade journal.
+    """
+    usdc = polymarket.get_usdc_balance()
+    positions = polymarket.get_open_positions()
+    exposure = sum(float(x.get("amount_usdc", 0.0)) for x in positions)
+    print(f"USDC balance: ${usdc:,.2f}")
+    print(f"Open positions: {len(positions)}")
+    print(f"Tracked exposure: ${exposure:,.2f}")
+
+
+@app.command()
+def positions() -> None:
+    """
+    List open positions from local trade journal.
+    """
+    positions = polymarket.get_open_positions()
+    if not positions:
+        print("No open positions in local trade journal.")
+        return
+    for p in positions:
+        print(f"- ${float(p.get('amount_usdc',0.0)):,.2f} | {p.get('market_question','Unknown')} | token={p.get('token_id')}")
+
+
 if __name__ == "__main__":
     app()

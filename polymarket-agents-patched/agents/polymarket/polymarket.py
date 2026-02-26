@@ -5,6 +5,7 @@ import os
 import pdb
 import time
 import ast
+import uuid
 import requests
 
 from dotenv import load_dotenv
@@ -29,6 +30,8 @@ from py_clob_client.clob_types import (
 from py_clob_client.order_builder.constants import BUY
 
 from agents.utils.objects import SimpleMarket, SimpleEvent
+from agents.notifications.telegram import TelegramNotifier
+from agents.notifications.state import add_trade, open_trades
 
 load_dotenv()
 
@@ -68,6 +71,7 @@ class Polymarket:
 
         self._init_api_keys()
         self._init_approvals(False)
+        self.notifier = TelegramNotifier()
 
     def _init_api_keys(self) -> None:
         self.client = ClobClient(
@@ -340,6 +344,12 @@ class Polymarket:
 
     def execute_market_order(self, market, amount) -> str:
         token_id = ast.literal_eval(market[0].dict()["metadata"]["clob_token_ids"])[1]
+        market_question = "Unknown Market"
+        try:
+            market_question = market[0].dict()["metadata"].get("question", "Unknown Market")
+        except Exception:
+            pass
+
         order_args = MarketOrderArgs(
             token_id=token_id,
             amount=amount,
@@ -349,6 +359,22 @@ class Polymarket:
         resp = self.client.post_order(signed_order, orderType=OrderType.FOK)
         print(resp)
         print("Done!")
+
+        # Persist trade journal entry for /positions and result monitoring
+        trade_id = str(uuid.uuid4())
+        add_trade(
+            {
+                "id": trade_id,
+                "market_question": market_question,
+                "token_id": token_id,
+                "amount_usdc": float(amount),
+                "raw_response": str(resp),
+            }
+        )
+
+        # Send Telegram trade-taken update if configured
+        self.notifier.send(self.notifier.fmt_trade_taken(market_question, token_id, float(amount)))
+
         return resp
 
     def get_usdc_balance(self) -> float:
@@ -356,6 +382,10 @@ class Polymarket:
             self.get_address_for_private_key()
         ).call()
         return float(balance_res / 10e5)
+
+    def get_open_positions(self):
+        """Returns locally tracked open trades from the trade journal."""
+        return open_trades()
 
 
 def test():
