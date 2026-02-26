@@ -1,7 +1,7 @@
 import json
 import os
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 STATE_PATH = os.getenv("POLYAI_STATE_PATH", "data/trade_journal.json")
 
@@ -51,3 +51,36 @@ def settle_trade(trade_id: str, result: str, path: str = STATE_PATH) -> bool:
     if changed:
         save_state(state, path)
     return changed
+
+
+def all_trades(path: str = STATE_PATH) -> List[Dict]:
+    return load_state(path).get("trades", [])
+
+
+def settled_trades(path: str = STATE_PATH) -> List[Dict]:
+    return [t for t in all_trades(path) if t.get("status") == "SETTLED"]
+
+
+def recent_trades(limit: int = 5, path: str = STATE_PATH) -> List[Dict]:
+    trades = sorted(all_trades(path), key=lambda t: t.get("created_at", ""), reverse=True)
+    return trades[:limit]
+
+
+def pnl_summary(path: str = STATE_PATH) -> Tuple[float, int, int]:
+    """
+    Returns (estimated_pnl_usd, wins, losses) based on settled trade outcomes.
+    Assumes stake-sized PnL proxy: WIN => +amount_usdc, LOSE => -amount_usdc.
+    """
+    pnl = 0.0
+    wins = 0
+    losses = 0
+    for t in settled_trades(path):
+        amt = float(t.get("amount_usdc", 0.0) or 0.0)
+        res = (t.get("result") or "").upper()
+        if res == "WIN":
+            pnl += amt
+            wins += 1
+        elif res == "LOSE":
+            pnl -= amt
+            losses += 1
+    return pnl, wins, losses
